@@ -1,4 +1,5 @@
-# PUMP-Documentation
+# Introduction:
+
 
 # Directory Structure:
 ```
@@ -8,6 +9,8 @@ pump
 		-wfnfolding
 ...
 ```
+# Step 0: Check Structures
+
 
 # Step 1: Folding
 The first step is to unfold the k-grid of the SC onto the UC. In this step we will 
@@ -107,6 +110,8 @@ $$
 
 `nF_sc` defines the fermi level band index. The valence and conduction states chosen will be `nF_sc -(+) nv_sc(nc_sc)`
 
+plot_map creates plots of the SC kpts and respective mapped UC kpts in the BZ.
+
 Format:
 
 ```
@@ -162,7 +167,71 @@ kpatch_centers_block 2
 Layer1
 	QE_ksc_0
 	QE_ksc_...
-	
+	...
 	
 ```
 
+In the `Layer1` directory, run `plot_mapkv_kc.py` to plot the UC mapping of the chosen SC bands. 
+
+`map_ibv(ibc).npy` are arrays of size SC_k_grid x num_selected_bands and contain the band indices of the selected SC bands in terms of the UC band indices. Typically many SC bands map to multiple k points in one or few UC bands. 
+
+`map_Ev(Ec).npy` are the energies of these SC bands. 
+
+`map_kv(kc).npy` are the UC k points of these bands
+
+`kuc_map_crys(tpba).npy` give the mapped UC k points for every SC k point in crystal or tpiba form.
+
+`E_map.npy` gives the calculated UC band energies from the nscf at every mapped UC k point for every SC k point
+
+`Unique_k_crys(tpba).npy` ...........
+
+`layer.pkl` .........
+
+`fullkgrid_crys(tpba).dat` entire mapped SC to UC mapped k grid.
+
+# Step 2: WFN_fullgrid
+
+exit `wfn_folding` and within the `unitcell` dir create `BSE_FR`, inside that create `wfn_fullgrid`.
+
+Here we do a QE nscf run for the full mapped UC k grid. We do this so that all wavefunctions can be generated with the same gauge.
+
+copy the SCF save directory and `nscf.in` used in `wfn_folding` to this directory, then replace the k points in `nscf.in` with those from `fullkgrid_crys/tpba.dat` and run.
+
+then, use `pw2bgw.x` in QE to convert to a BGW `WFN` file. 
+
+Format:
+```
+&input_pw2bgw
+   prefix = 'WS2'
+   real_or_complex = 2
+   wfng_flag = .true.
+   wfng_file = 'WFN'
+   wfng_kgrid = .true.
+   wfng_nk1 = 75
+   wfng_nk2 = 75
+   wfng_nk3 = 1
+   wfng_dk1 = 0.0
+   wfng_dk2 = 0.0
+   wfng_dk3 = 0.0
+/
+```
+
+
+# Step 3: Projection:
+
+
+
+# Step 4: GetQ:
+
+For a $Q=0$ transition in the SC, unfolding to the UC turns many of these into finite $Q$ transitions. Therefore we must identify the UC finite $Q$ transitions which correspond to the $Q=0$ transition in the SC. Furthermore, conditions require that we only use $Q$ transitions which are all parallel to each other. To do this we use `get_uniqueQ.py`
+
+Go back to the `wfn_folding` directory and create the `GetQ` dir. From `Layer1` copy `layer.pkl$` as `layer_top.pkl`
+
+Then run `get_uniqueQ.py 2`. This is a parallel code, however it is not heavy so 1 node is plenty.
+
+## Output:
+
+(I'm not sure I can explain these outputs well right now)
+
+
+In the `BSE_FR/wfn_fullgrid` directory, make a new directory called `Gen_shiftQWFN`.
