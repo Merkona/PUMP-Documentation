@@ -216,9 +216,96 @@ Format:
 /
 ```
 
+After this, the WFN then needs to be converted to h5 format. To do this, simply run `wfn2hd5.x BIN wfn_2v2c.cplx WFN_FullGrid.h5`
+
+*make to to `module load phdf5/1.14.0` or whichever version you have compiled with BGW*
+
+### Optional: wfn_modify
+This WFN will be used for Kernel calculations, which only need the relevant bands for transitions. Therefore, one can optionally cut this WFN file using `wfn_modify.x` or `wfn_modify_spinor.x` in BGW. 
+
+These scripts are not automatically available, and require recompiling the MeanField/Utilities dir in BGW. The instructions for this are elsewhere.
+
+This program requires an input file,
+Format:
+```
+wfn.cplx # name of wfn file
+wfn_2v2c.cplx # name for output wfn file
+1 # not sure
+6084 # number of kpts in full grid
+12 # min band index
+15 # max band index
+1 # range of bands within min/max that are valence, here it's 12 and 13 so 1-2
+2 
+```
+
 
 # Step 3: Projection:
+We want to take a dot-product projection between the constructed wfns from the pristince SC wfns and the actual SC wfns. 
 
+There are multiple steps to this:
+1. Obtain DM from SIESTA for SC
+2. Obtain wfns from SIESTA for SC, selected wfns are those which are to be represented by pristine SC 
+3. Convert wfns with `siesta2bgw.py` into numpy files
+*pp.py here somwhere???*
+4. Convert numpy files with `npy2wfn.py` 
+5. Run `dotprod.py` 
+
+For now I will assume it is known how to do steps 1 through 3 
+
+`npy2wfn.py` should be run in the same directory as `siesta2bgw.py`
+Format:
+```
+# NPY2WFN.PY INPUT FILE
+prefix        = 'WSe2'
+savedir       = '.'   # input/output file will be read/saved in {savedir}/Siesta2bgw.save/
+noncolin      = True  # True for non-colinear calc.
+mnband        = 8    # number of bands
+nvband        = 4    # number of valance bands
+ecutwfc       = 40.0  # in Ry
+ecutrho       = ecutwfc*4  # Default
+fftgrid       = [75, 75, 192]
+fn_kpt        = "kpts.txt"  # k-points in kgrid.out format (= QE format)
+wfng_dk       = [0.0, 0.0, 0.0]
+wfng_nk       = [2, 1 , 1  ]
+nosym         = True  # Currently only support uniform k-grid with no-symmetry
+wfn_out       = "./WFN.h5"
+```
+
+In `Siesta/WFN_GK` create the new directory `DP`.
+
+Link  `WFN_FullGrid.h5` from `wfn_fullgrid` to `WFN_bot.h5`
+Link  `kpts_sc` from `wfn_folding` to the same
+
+Run `dotprod.py`
+
+Format:
+```
+nk_moire, nb_v_moire, nb_c_moire
+2 4 4
+
+Super-cell vectors wrt bottom layer
+3 0
+0 3
+
+nb_v_pris_bot, nb_c_pris_bot
+4 4
+
+nb_v_pris_top, nb_c_pris_top
+0 0
+
+path_to_collect_folder_bot
+/global/homes/m/mitn/scratch/Moire/PUMP_tutorial/MonoWSe2_3x3/WFNFolding_new/Gamma/Layer1
+
+project_only_bot
+True
+
+path_to_moire_wfn
+/global/homes/m/mitn/scratch/Moire/PUMP_tutorial/MonoWSe2_3x3/Siesta/WFN_GK/Siesta2bgw.save
+```
+
+*Make sure nv_v_moire + nv_c_moire = the amount of bands given in npy2wfn.inp*
+
+### Can also do noeh absorption in WFN_GK/Dipole
 
 
 # Step 4: GetQ:
@@ -235,3 +322,30 @@ Then run `get_uniqueQ.py 2`. This is a parallel code, however it is not heavy so
 
 
 In the `BSE_FR/wfn_fullgrid` directory, make a new directory called `Gen_shiftQWFN`.
+
+In this directory copy `wfn_fullgrid.h5` from `wfn_fullgrid`, `Q_crys_umk_unique.txt` from `wfn_folding/GetQ`, and `Unique_k_crys.txt` from `wfn_folding/Layer1`.
+
+Then, run the following programs:
+`extract_wfn2patch_old.py` and `extract_wfn2patch_Q0_old.py`
+
+These will create ...
+
+
+# Step 5: Epsilon:
+We need to calculate epsilon for the upcoming Kernel calculations. In order to have a well converged epsilon on a sufficiently fine grid, we use a trick to reduce computational time.
+
+The polarizability $\chi$ includes a term $E_{k\text{, }n}$ where $n$ runs over many bands, and $E_{k+q\text{, }n'}$ where $n'$ runs over just the occupied bands. This allows us to instead generate two WFN files for epsilon. The first has all of the necessary conduction bands and is on a coarse k-grid, and the second is on a fine k-grid but only contains occupied states.
+
+In this case, the fine grid is the same grid used in `wfn_fullgrid`. The coarse grid should be a subset of this grid in order for the trick to work. This is because we need $k+q$ to lie on the fine grid for $E_{k+q}$. For instance, my fullgrid is gamma centered and uniform 75x75 so I can use a 15x15 gamma centered uniform grid because 75 is divisible by 15. For moire systems this does not work and you must take a subset directly from the fullgrid.
+
+Three QE calculations are done, one to get WFN_co, one for WFN_fi, and one for WFNq_fi. This third wavefunction is calculated on the entire fullgrid with a small shift (like a 0.01 shift in the x-coord for instance) to handle the $q\to{0}$ case in epsilon. 
+
+Two epsilon calculations are done. One to get epsmat.h5 using WFN_co and WFN_fi, and one to get eps0mat.h5 using WFN_co and WFNq_fi. 
+
+For the first epsilon calculation, the entire q-grid from fullgrid (which should be the same) *check that* is calculated. The gamma point is removed, and all points have the tag `-1` so that they use WFN_fi. 
+*it's the same for a uniform gamma-centered grid like mine, if it's a moire system then one grid is twisted so it may not generally be the case*
+
+
+For the second epsilon calculation, only the shifted gamma point is calculated, with the tag `1` as usual to indicate it's a $q\to 0$ point.
+
+The actual names of the WFN files for both cases should be `WFN, WFNq` 
